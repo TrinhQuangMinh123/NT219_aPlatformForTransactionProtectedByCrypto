@@ -6,19 +6,9 @@ class HealthResponse(BaseModel):
     status: str = "ok"
 
 
-class OrderRequest(BaseModel):
-    order_id: str
-    amount: float
-
-
 app = FastAPI()
 
 
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     return HealthResponse()
-
-
-@app.post("/orders", response_model=OrderRequest)
-async def create_order(order: OrderRequest) -> OrderRequest:
-    return order

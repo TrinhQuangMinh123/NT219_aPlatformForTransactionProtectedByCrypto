@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci
+RUN npm install
 
 # Copy source code
 COPY . .
@@ -23,7 +23,7 @@ WORKDIR /app
 RUN npm install -g serve
 
 # Copy built app from builder
-COPY --from=builder /app/build ./build
+COPY --from=builder /app/dist ./build
 
 # Expose port
 EXPOSE 3000
