@@ -1,0 +1,215 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres_db:
+    image: postgres:latest
+    container_name: payment_gateway_db
+    environment:
+      POSTGRES_USER: payment_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secure_password_123}
+      POSTGRES_DB: payment_gateway
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - payment_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payment_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # RabbitMQ Message Queue
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: payment_gateway_mq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - payment_network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # SoftHSM for Key Management
+  softhsm:
+    build:
+      context: ./services/softhsm
+      dockerfile: Dockerfile
+    container_name: payment_gateway_hsm
+    environment:
+      SOFTHSM2_CONF: /etc/softhsm2/softhsm2.conf
+    volumes:
+      - ./services/softhsm/softhsm2.conf:/etc/softhsm2/softhsm2.conf:ro
+      - ./services/softhsm/init_softhsm.sh:/usr/local/bin/init_softhsm.sh:ro
+      - softhsm_tokens:/var/lib/softhsm/tokens
+    networks:
+      - payment_network
+    ports:
+      - "5696:5696"
+    command: >
+      sh -c "
+      if [ ! -f /var/lib/softhsm/tokens/.initialized ]; then
+        bash /usr/local/bin/init_softhsm.sh
+        touch /var/lib/softhsm/tokens/.initialized
+      fi &&
+      softhsm2-util --show-slots
+      "
+    healthcheck:
+      test: ["CMD", "softhsm2-util", "--show-slots"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Frontend (React.js)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: payment_gateway_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: http://api_gateway:8000
+      REACT_APP_STRIPE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+    networks:
+      - payment_network
+    depends_on:
+      - api_gateway
+    volumes:
+      - ./frontend/src:/app/src
+
+  # API Gateway
+  api_gateway:
+    build:
+      context: ./services/api_gateway
+      dockerfile: Dockerfile
+    container_name: payment_gateway_api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://payment_user:${DB_PASSWORD:-secure_password_123}@postgres_db:5432/payment_gateway
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672/
+      SOFTHSM_MODULE: /usr/lib/softhsm/libsofthsm2.so
+      SOFTHSM_CONF: /etc/softhsm2/softhsm2.conf
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    networks:
+      - payment_network
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      softhsm:
+        condition: service_healthy
+    volumes:
+      - ./services/softhsm/softhsm2.conf:/etc/softhsm2/softhsm2.conf:ro
+      - softhsm_tokens:/var/lib/softhsm/tokens:ro
+
+  # Order Service
+  order_service:
+    build:
+      context: ./services/order
+      dockerfile: Dockerfile
+    container_name: payment_gateway_order
+    ports:
+      - "8001:8000"
+    environment:
+      DATABASE_URL: postgresql://payment_user:${DB_PASSWORD:-secure_password_123}@postgres_db:5432/payment_gateway
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672/
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    networks:
+      - payment_network
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # Payment Orchestrator
+  payment_orchestrator:
+    build:
+      context: ./services/payment_orchestrator
+      dockerfile: Dockerfile
+    container_name: payment_gateway_orchestrator
+    ports:
+      - "8002:8000"
+    environment:
+      DATABASE_URL: postgresql://payment_user:${DB_PASSWORD:-secure_password_123}@postgres_db:5432/payment_gateway
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672/
+      SOFTHSM_MODULE: /usr/lib/softhsm/libsofthsm2.so
+      SOFTHSM_CONF: /etc/softhsm2/softhsm2.conf
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    networks:
+      - payment_network
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      softhsm:
+        condition: service_healthy
+    volumes:
+      - ./services/softhsm/softhsm2.conf:/etc/softhsm2/softhsm2.conf:ro
+      - softhsm_tokens:/var/lib/softhsm/tokens:ro
+
+  # Fraud Detection Engine
+  fraud_engine:
+    build:
+      context: ./services/fraud_engine
+      dockerfile: Dockerfile
+    container_name: payment_gateway_fraud
+    ports:
+      - "8003:8000"
+    environment:
+      DATABASE_URL: postgresql://payment_user:${DB_PASSWORD:-secure_password_123}@postgres_db:5432/payment_gateway
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672/
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    networks:
+      - payment_network
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # Reconciliation Worker
+  reconciliation_worker:
+    build:
+      context: ./services/reconciliation
+      dockerfile: Dockerfile
+    container_name: payment_gateway_reconciliation
+    environment:
+      DATABASE_URL: postgresql://payment_user:${DB_PASSWORD:-secure_password_123}@postgres_db:5432/payment_gateway
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672/
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    networks:
+      - payment_network
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  softhsm_tokens:
+
+networks:
+  payment_network:
+    driver: bridge
