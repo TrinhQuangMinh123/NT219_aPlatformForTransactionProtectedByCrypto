@@ -1,45 +1,30 @@
 # Secure payment gateway prototype
-A project me and my bro preparing for learning and working on.
 
-Một dự án môn học nhằm mục đích tìm hiểu, xây dựng và thử nghiệm một mô hình cổng thanh toán an toàn.
+*Automatically synced with your [v0.app](https://v0.app) deployments*
 
-## 🎯 Mục tiêu dự án
+[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/nu99ets-projects/v0-secure-payment-gateway-prototype)
+[![Built with v0](https://img.shields.io/badge/Built%20with-v0.app-black?style=for-the-badge)](https://v0.app/chat/projects/4c9pM4Ww0NQ)
 
-Dự án này tập trung vào hai mục tiêu chính:
+## Overview
 
-1.  **Học tập (Learning):** Nghiên cứu các thành phần cốt lõi của một hệ thống thanh toán, bao gồm xử lý giao dịch, API, và các phương pháp bảo mật.
-2.  **Thực hành (Working On):** Áp dụng kiến thức về phát triển web và an ninh mạng để xây dựng một prototype có khả năng chống chịu lại các cuộc tấn công phổ biến.
+This repository will stay in sync with your deployed chats on [v0.app](https://v0.app).
+Any changes you make to your deployed app will be automatically pushed to this repository from [v0.app](https://v0.app).
 
-## 🛡️ Trọng tâm bảo mật (Security Focus)
+## Deployment
 
-Vì đây là một cổng thanh toán, bảo mật là ưu tiên hàng đầu. Dự án sẽ tập trung nghiên cứu và triển khai các biện pháp phòng thủ chống lại:
+Your project is live at:
 
-* **Lỗ hổng Web phổ biến:**
-    * SQL Injection (SQLi)
-    * Cross-Site Scripting (XSS)
-    * Server-Side Request Forgery (SSRF)
-    * Cross-Site Request Forgery (CSRF)
-* **Xác thực & Ủy quyền:**
-    * Triển khai xác thực an toàn (ví dụ: sử dụng JWT và các cơ chế chống tấn công như JWT Algorithm Confusion).
-    * Phân quyền người dùng (ví dụ: admin, user, merchant) một cách chặt chẽ.
-* **Mật mã & Bảo vệ dữ liệu:**
-    * Mã hóa dữ liệu nhạy cảm (như thông tin thẻ) khi lưu trữ (at-rest) và truyền tải (in-transit), có thể sử dụng các thư viện như `CryptoPP` (C++) hoặc các thư viện tương đương trong Node.js/Python.
-* **Lỗ hổng Logic nghiệp vụ (Business Logic):**
-    * Đảm bảo logic xử lý thanh toán (ví dụ: kiểm tra số dư, xác nhận giao dịch) được xác thực kỹ lưỡng ở phía backend, tránh các lỗ hổng do tin tưởng dữ liệu từ client.
+**[https://vercel.com/nu99ets-projects/v0-secure-payment-gateway-prototype](https://vercel.com/nu99ets-projects/v0-secure-payment-gateway-prototype)**
 
-## 💻 Công nghệ dự kiến (Potential Tech Stack)
+## Build your app
 
-Đây là các công nghệ dự kiến dựa trên các lĩnh vực bạn đang quan tâm:
+Continue building your app on:
 
-* **Backend:** Node.js (Express) hoặc Python (FastAPI / Flask)
-* **Database:** PostgreSQL / MySQL
-* **Frontend (Nếu có):** Next.js / React
-* **Triển khai (Deployment):** Docker & Kubernetes (Minikube)
+**[https://v0.app/chat/projects/4c9pM4Ww0NQ](https://v0.app/chat/projects/4c9pM4Ww0NQ)**
 
-## 🚀 Các bước tiếp theo (Roadmap)
+## How It Works
 
-- [ ] Thiết kế kiến trúc hệ thống (System Design)
-- [ ] Định nghĩa API (API Specification)
-- [ ] Xây dựng tính năng xác thực người dùng
-- [ ] Xây dựng lõi xử lý giao dịch
-- [ ] Viết kịch bản kiểm thử (test cases) và "pentest" (thử nghiệm xâm nhập) các tính năng đã xây dựng.
+1. Create and modify your project using [v0.app](https://v0.app)
+2. Deploy your chats from the v0 interface
+3. Changes are automatically pushed to this repository
+4. Vercel deploys the latest version from this repository
