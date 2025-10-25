@@ -218,7 +218,7 @@
 
 ## 19. Appendix: Repository Structure (mẫu)
 
-```
+\`\`\`
 project-root/
   ├─ frontend/           # checkout page (hosted fields example), test scripts
   ├─ services/
@@ -229,6 +229,6 @@ project-root/
   ├─ infra/              # docker-compose / helm charts, SoftHSM configs
   ├─ docs/               # report, PCI mapping, runbooks
   └─ experiments/        # replay_tests, supply_chain_sim, hsm_compromise_drill, load tests
-```
+\`\`\`
 
 ---

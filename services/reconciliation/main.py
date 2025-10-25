@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import time
@@ -11,6 +12,13 @@ from sqlalchemy.exc import IntegrityError
 
 from .database import SessionLocal, init_db
 from .models import ReceiptRecord
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
+    stream=sys.stdout
+)
+logger = logging.getLogger(__name__)
 
 QUEUE_NAME = os.getenv("RECONCILIATION_QUEUE", "reconciliation_queue")
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
@@ -38,44 +46,47 @@ def store_receipt(payload: dict) -> None:
         session.add(record)
         try:
             session.commit()
+            logger.info(f"[RECONCILIATION] Stored receipt for order {order_id}")
         except IntegrityError:
             session.rollback()
-            # Already stored (duplicate signature) -> ignore
-        except Exception:
+            logger.warning(f"[RECONCILIATION] Duplicate receipt (already stored): order {order_id}")
+        except Exception as exc:
             session.rollback()
+            logger.error(f"[RECONCILIATION] Failed to persist receipt: {exc}")
             raise
 
 
 def main() -> None:
+    logger.info("[RECONCILIATION] Starting reconciliation worker...")
     init_db()
+    logger.info("[RECONCILIATION] Database initialized")
+    
     params = pika.URLParameters(RABBITMQ_URL)
     while True:
         try:
+            logger.info("[RECONCILIATION] Connecting to RabbitMQ...")
             with pika.BlockingConnection(params) as connection:
                 channel = connection.channel()
                 channel.queue_declare(queue=QUEUE_NAME, durable=False)
+                logger.info(f"[RECONCILIATION] Connected to queue: {QUEUE_NAME}")
 
                 def _on_message(_ch, _method, _properties, body: bytes) -> None:
                     try:
                         payload = json.loads(body.decode("utf-8"))
                     except json.JSONDecodeError:
-                        print("[RECONCILIATION] Received malformed message", file=sys.stderr, flush=True)
+                        logger.error("[RECONCILIATION] Received malformed message", exc_info=True)
                         return
 
                     try:
                         store_receipt(payload)
-                        print(
-                            f"[RECONCILIATION] Stored receipt for order {payload.get('receipt', {}).get('order_id')}",
-                            flush=True,
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        print(f"[RECONCILIATION] Failed to persist receipt: {exc}", file=sys.stderr, flush=True)
+                    except Exception as exc:
+                        logger.error(f"[RECONCILIATION] Failed to persist receipt: {exc}", exc_info=True)
 
                 channel.basic_consume(queue=QUEUE_NAME, on_message_callback=_on_message, auto_ack=True)
-                print("[RECONCILIATION] Waiting for messages...", flush=True)
+                logger.info("[RECONCILIATION] Waiting for messages...")
                 channel.start_consuming()
         except pika.exceptions.AMQPConnectionError as exc:
-            print(f"[RECONCILIATION] Connection failed: {exc}. Retrying in 5s...", file=sys.stderr, flush=True)
+            logger.error(f"[RECONCILIATION] Connection failed: {exc}. Retrying in 5s...", exc_info=True)
             time.sleep(5)
 
 

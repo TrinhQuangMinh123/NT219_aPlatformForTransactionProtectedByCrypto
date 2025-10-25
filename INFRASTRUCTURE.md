@@ -63,6 +63,203 @@ Keycloak automatically imports the `ecommerce` realm with a sample user.
 
 Use the Keycloak UI to obtain an access token (or run `curl` / Postman), then call the Envoy endpoints (e.g. `POST http://localhost:10000/api/payment/tokenize`) with the `Authorization: Bearer <token>` header.
 
+## Stage 1: Automated Testing & Verification
+
+### Running the Full Integration Test
+
+Execute the complete end-to-end payment flow test:
+
+\`\`\`bash
+make test
+\`\`\`
+
+This will:
+1. Start all services
+2. Obtain JWT token from Keycloak
+3. Create an order
+4. Tokenize a card via HSM
+5. Process payment with fraud check
+6. Verify signed receipt
+7. Confirm reconciliation entry in database
+
+Expected output: "All integration tests PASSED"
+
+### Health Check
+
+Verify all services are healthy:
+
+\`\`\`bash
+make health
+\`\`\`
+
+Expected output: All services show ✓
+
+### Viewing Service Logs
+
+View logs from specific services:
+
+\`\`\`bash
+# Payment Orchestrator (tokenization, payment processing, signing)
+make logs-payment
+
+# Fraud Engine (fraud scoring decisions)
+make logs-fraud
+
+# Reconciliation Worker (receipt processing)
+make logs-worker
+
+# Order Service
+make logs-order
+
+# Envoy Gateway (API routing, JWT validation)
+make logs-envoy
+
+# Keycloak (authentication)
+make logs-keycloak
+
+# SoftHSM (HSM operations)
+make logs-hsm
+
+# All services
+make logs-all
+\`\`\`
+
+### HSM Cryptographic Operations
+
+#### Dump HSM Information
+
+View HSM slots, objects, and retrieve the public key:
+
+\`\`\`bash
+make dump-hsm
+\`\`\`
+
+This will:
+1. Display SoftHSM slots and initialized tokens
+2. Retrieve the RSA public key from Payment Orchestrator
+3. Decode and display the public key in both base64 and PEM formats
+4. Save the public key to `/tmp/public_key.pem` for verification
+
+#### Verify Signatures
+
+Verify a signed receipt using the public key:
+
+\`\`\`bash
+# Get a signature from a payment response
+SIGNATURE="<base64_encoded_signature_from_payment_response>"
+MESSAGE='{"order_id":"...","amount":200000,...}'
+
+make verify-sig MESSAGE="$MESSAGE" SIGNATURE="$SIGNATURE"
+\`\`\`
+
+Expected output: "Signature verification PASSED"
+
+### Manual Payment Flow (Step-by-Step)
+
+#### Step 1: Obtain JWT Token
+
+\`\`\`bash
+TOKEN=$(make token)
+echo $TOKEN
+\`\`\`
+
+#### Step 2: Create Order
+
+\`\`\`bash
+ORDER_RESPONSE=$(curl -X POST http://localhost:8001/orders \
+  -H "x-user-id: customer1" \
+  -H "Content-Type: application/json" \
+  -d '{"amount":200000,"currency":"VND","items":[]}')
+
+ORDER_ID=$(echo $ORDER_RESPONSE | jq -r '.id')
+echo "Order ID: $ORDER_ID"
+\`\`\`
+
+#### Step 3: Tokenize Card (HSM Encryption)
+
+\`\`\`bash
+TOKENIZE_RESPONSE=$(curl -X POST http://localhost:10000/api/payment/tokenize \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"pan":"4111111111111111","exp_month":12,"exp_year":2030,"cvc":"123"}')
+
+PAYMENT_TOKEN=$(echo $TOKENIZE_RESPONSE | jq -r '.token')
+echo "Payment Token: $PAYMENT_TOKEN"
+\`\`\`
+
+#### Step 4: Process Payment (Fraud Check + PSP + Signing)
+
+\`\`\`bash
+PAYMENT_RESPONSE=$(curl -X POST http://localhost:10000/api/payments \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"order_id\":\"$ORDER_ID\",\"payment_token\":\"$PAYMENT_TOKEN\"}")
+
+echo $PAYMENT_RESPONSE | jq .
+\`\`\`
+
+Expected response:
+\`\`\`json
+{
+  "status": "SUCCESS",
+  "signed_receipt": "MEUCIQDx...",
+  "receipt": {
+    "order_id": "...",
+    "amount": 200000,
+    "currency": "VND",
+    "timestamp": "2024-...",
+    "status": "SUCCESS",
+    "psp_reference": "pi_mock_...",
+    "last4": "1111"
+  }
+}
+\`\`\`
+
+#### Step 5: Verify Reconciliation Entry
+
+\`\`\`bash
+docker-compose exec -T postgres_db psql -U payment_user -d payment_gateway -c \
+  "SELECT order_id, status, signature FROM reconciliation_receipts WHERE order_id = '$ORDER_ID';"
+\`\`\`
+
+### Debugging & Troubleshooting
+
+#### View Detailed Logs for a Service
+
+\`\`\`bash
+make debug-logs SERVICE=payment
+make debug-logs SERVICE=fraud
+make debug-logs SERVICE=reconciliation
+\`\`\`
+
+#### Check Database State
+
+\`\`\`bash
+# View payment intents
+docker-compose exec -T postgres_db psql -U payment_user -d payment_gateway -c \
+  "SELECT id, order_id, status, created_at FROM payment_intents LIMIT 10;"
+
+# View used tokens (replay prevention)
+docker-compose exec -T postgres_db psql -U payment_user -d payment_gateway -c \
+  "SELECT order_id, created_at FROM used_payment_tokens LIMIT 10;"
+
+# View reconciliation receipts
+docker-compose exec -T postgres_db psql -U payment_user -d payment_gateway -c \
+  "SELECT order_id, status, processed_at FROM reconciliation_receipts LIMIT 10;"
+\`\`\`
+
+#### Check RabbitMQ Queue
+
+\`\`\`bash
+docker-compose exec -T rabbitmq rabbitmq-diagnostics queues
+\`\`\`
+
+#### Inspect HSM Slots
+
+\`\`\`bash
+docker-compose exec -T softhsm softhsm2-util --show-slots
+\`\`\`
+
 ## Reconciliation Storage
 
 - Reconciliation worker now persists every signed receipt to PostgreSQL (`reconciliation_receipts` table) together with its signature, status, PSP reference, and raw payload. Duplicate signatures are ignored to avoid double counting.
@@ -129,6 +326,25 @@ docker-compose exec postgres_db psql -U payment_user -d payment_gateway
 docker-compose exec rabbitmq rabbitmq-diagnostics ping
 \`\`\`
 
+### Services not communicating
+\`\`\`bash
+# Check network
+docker network ls
+docker network inspect payment_network
+
+# Test connectivity
+docker-compose exec payment_orchestrator curl -sf http://order_service:8000/health
+\`\`\`
+
+### Keycloak token issues
+\`\`\`bash
+# Check Keycloak logs
+make logs-keycloak
+
+# Verify realm import
+curl -sf http://localhost:8081/realms/ecommerce
+\`\`\`
+
 ## Security Notes
 
 - Change all default passwords in `.env` for production
@@ -136,3 +352,5 @@ docker-compose exec rabbitmq rabbitmq-diagnostics ping
 - Enable FIPS mode in softhsm2.conf for production
 - Rotate keys regularly
 - Monitor HSM access logs
+- Review Envoy access logs for suspicious patterns
+- Implement rate limiting on sensitive endpoints
