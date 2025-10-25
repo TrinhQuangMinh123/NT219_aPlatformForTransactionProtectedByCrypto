@@ -12,7 +12,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     networks:
       - payment_network
     healthcheck:
@@ -63,7 +63,8 @@ services:
         bash /usr/local/bin/init_softhsm.sh
         touch /var/lib/softhsm/tokens/.initialized
       fi &&
-      softhsm2-util --show-slots
+      softhsm2-util --show-slots &&
+      tail -f /dev/null
       "
     healthcheck:
       test: ["CMD", "softhsm2-util", "--show-slots"]
@@ -77,45 +78,17 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: payment_gateway_frontend
-    ports:
-      - "3000:3000"
     environment:
-      REACT_APP_API_URL: http://api_gateway:8000
+      REACT_APP_API_URL: http://envoy:10000
       REACT_APP_STRIPE_KEY: ${STRIPE_PUBLISHABLE_KEY}
     networks:
       - payment_network
     depends_on:
-      - api_gateway
+      - envoy
     volumes:
       - ./frontend/src:/app/src
-
-  # API Gateway
-  api_gateway:
-    build:
-      context: ./services/api_gateway
-      dockerfile: Dockerfile
-    container_name: payment_gateway_api
     ports:
-      - "8000:8000"
-    environment:
-      DATABASE_URL: postgresql://payment_user:${DB_PASSWORD:-secure_password_123}@postgres_db:5432/payment_gateway
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672/
-      SOFTHSM_MODULE: /usr/lib/softhsm/libsofthsm2.so
-      SOFTHSM_CONF: /etc/softhsm2/softhsm2.conf
-      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    networks:
-      - payment_network
-    depends_on:
-      postgres_db:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      softhsm:
-        condition: service_healthy
-    volumes:
-      - ./services/softhsm/softhsm2.conf:/etc/softhsm2/softhsm2.conf:ro
-      - softhsm_tokens:/var/lib/softhsm/tokens:ro
+      - "3000:3000"
 
   # Order Service
   order_service:
@@ -195,7 +168,6 @@ services:
     environment:
       DATABASE_URL: postgresql://payment_user:${DB_PASSWORD:-secure_password_123}@postgres_db:5432/payment_gateway
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672/
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     networks:
       - payment_network
@@ -204,7 +176,42 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+# Identity Provider (Keycloak)
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: payment_gateway_keycloak
+    command:
+      - start-dev
+      - --http-port=8081
+      - --hostname-strict=false
+      - --import-realm
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./idp/realm-ecommerce.json:/opt/keycloak/data/import/realm-ecommerce.json:ro
+    networks:
+      - payment_network
+    ports:
+      - "8081:8081"
 
+  # Envoy API Gateway
+  envoy:
+    image: envoyproxy/envoy:v1.30-latest
+    container_name: payment_gateway_envoy
+    depends_on:
+      keycloak:
+        condition: service_started
+      payment_orchestrator:
+        condition: service_started
+    networks:
+      - payment_network
+    ports:
+      - "10000:10000"
+      - "9901:9901"
+    volumes:
+      - ./gateway/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "${ENVOY_LOG_LEVEL:-info}"]
 volumes:
   postgres_data:
   rabbitmq_data:

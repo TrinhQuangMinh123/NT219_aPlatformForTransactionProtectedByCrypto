@@ -1,23 +1,25 @@
+from __future__ import annotations
+
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, PositiveInt
 
 
 class HealthResponse(BaseModel):
     status: str = "ok"
 
 
-class FraudCheckRequest(BaseModel):
-    order_id: str
-    amount: float
+class FraudScoreRequest(BaseModel):
+    amount: PositiveInt
+    user_ip: str | None = None
+    device_id: str | None = None
 
 
-class FraudCheckResponse(BaseModel):
-    order_id: str
-    risk_score: float
-    flagged: bool
+class FraudScoreResponse(BaseModel):
+    score: int
+    action: str
 
 
-app = FastAPI()
+app = FastAPI(title="Fraud Engine")
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -25,7 +27,8 @@ async def health() -> HealthResponse:
     return HealthResponse()
 
 
-@app.post("/fraud-check", response_model=FraudCheckResponse)
-async def fraud_check(request: FraudCheckRequest) -> FraudCheckResponse:
-    score = min(request.amount / 1000.0, 1.0)
-    return FraudCheckResponse(order_id=request.order_id, risk_score=score, flagged=score > 0.7)
+@app.post("/score", response_model=FraudScoreResponse)
+async def score(payload: FraudScoreRequest) -> FraudScoreResponse:
+    if payload.amount > 10_000_000:
+        return FraudScoreResponse(score=95, action="BLOCK")
+    return FraudScoreResponse(score=10, action="ALLOW")

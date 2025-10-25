@@ -14,5 +14,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Run worker (no port exposure)
-CMD ["python", "-m", "celery", "-A", "tasks", "worker", "--loglevel=info"]
+# Run worker
+CMD ["python", "main.py"]

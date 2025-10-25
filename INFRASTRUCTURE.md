@@ -9,9 +9,10 @@ This docker-compose setup defines a complete microservices architecture for the 
 - **postgres_db**: PostgreSQL database for all services
 - **rabbitmq**: Message queue for async processing
 - **softhsm**: Hardware Security Module (SoftHSM2) for key management
+- **keycloak**: Identity provider (OIDC) for issuing JWTs
+- **envoy**: API gateway enforcing authZ/authN and proxying traffic to backend services
 
 ### Application Services
-- **api_gateway**: Main API entry point (port 8000)
 - **order_service**: Order management (port 8001)
 - **payment_orchestrator**: Payment processing (port 8002)
 - **fraud_engine**: Fraud detection (port 8003)
@@ -48,9 +49,24 @@ docker-compose exec softhsm softhsm2-util --show-slots
 
 ### 4. Access Services
 - Frontend: http://localhost:3000
-- API Gateway: http://localhost:8000
+- Envoy Gateway: http://localhost:10000
+- Keycloak Console: http://localhost:8081 (admin/admin)
 - RabbitMQ Management: http://localhost:15672 (guest/guest)
 - PostgreSQL: localhost:5432
+
+### 5. Obtain Tokens
+Keycloak automatically imports the `ecommerce` realm with a sample user.
+
+- Realm: `ecommerce`
+- Client: `payment-frontend` (public)
+- Sample user: `customer1` / `ChangeMe123!`
+
+Use the Keycloak UI to obtain an access token (or run `curl` / Postman), then call the Envoy endpoints (e.g. `POST http://localhost:10000/api/payment/tokenize`) with the `Authorization: Bearer <token>` header.
+
+## Reconciliation Storage
+
+- Reconciliation worker now persists every signed receipt to PostgreSQL (`reconciliation_receipts` table) together with its signature, status, PSP reference, and raw payload. Duplicate signatures are ignored to avoid double counting.
+- A `reconciliation_reports` table is scaffolded for future summary exports (daily/weekly reports). Populate it from a periodic job once report generation logic is ready.
 
 ## SoftHSM Configuration
 
@@ -80,9 +96,10 @@ session.login(os.getenv('SOFTHSM_USER_PIN'))
 
 See `.env.example` for all available variables. Key ones:
 - `DB_PASSWORD`: PostgreSQL password
-- `JWT_SECRET`: JWT signing secret
 - `STRIPE_SECRET_KEY`: Stripe API key (sandbox)
 - `LOG_LEVEL`: Logging level (INFO, DEBUG, etc.)
+- `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD`: bootstrap credentials for Keycloak admin console
+- `ENVOY_LOG_LEVEL`: log level for Envoy proxy
 
 ## Volumes
 

@@ -1,0 +1,40 @@
+{
+  "realm": "ecommerce",
+  "enabled": true,
+  "displayName": "Ecommerce Secure Realm",
+  "roles": {
+    "realm": [
+      {
+        "name": "customer",
+        "description": "Standard customer role allowed to perform payments"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "payment-frontend",
+      "name": "Payment Frontend",
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "redirectUris": ["*"] ,
+      "webOrigins": ["*"]
+    }
+  ],
+  "users": [
+    {
+      "username": "customer1",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "First",
+      "lastName": "Customer",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "ChangeMe123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["customer"]
+    }
+  ]
+}

@@ -35,7 +35,7 @@ softhsm2-util --show-slots
 # Generate RSA key pair for signing (2048-bit)
 echo "[SoftHSM] Generating RSA key pair for signing..."
 pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so \
-  --slot "$SLOT" \
+  --token-label "$LABEL" \
   --pin "$USER_PIN" \
   --keypairgen \
   --key-type rsa:2048 \
@@ -47,7 +47,7 @@ echo "[SoftHSM] RSA key pair generated successfully!"
 # Generate AES key for encryption (256-bit)
 echo "[SoftHSM] Generating AES key for encryption..."
 pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so \
-  --slot "$SLOT" \
+  --token-label "$LABEL" \
   --pin "$USER_PIN" \
   --keygen \
   --key-type AES:32 \
@@ -59,7 +59,7 @@ echo "[SoftHSM] AES key generated successfully!"
 # List all objects in the token
 echo "[SoftHSM] Objects in token:"
 pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so \
-  --slot "$SLOT" \
+  --token-label "$LABEL" \
   --pin "$USER_PIN" \
   --list-objects
 

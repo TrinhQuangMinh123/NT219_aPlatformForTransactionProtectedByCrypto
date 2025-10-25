@@ -1,185 +1,139 @@
-import logging
+"""Utilities for interacting with SoftHSM via PKCS#11."""
+
+from __future__ import annotations
+
+import base64
 import os
-from typing import Optional
-from pkcs11 import PyKCS11
+import threading
+from contextlib import contextmanager
+from typing import Iterator
 
-logger = logging.getLogger(__name__)
+import pkcs11
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from pkcs11 import Attribute, Key, KeyType, Mechanism, ObjectClass
+from pkcs11.exceptions import NoSuchKey
 
-# HSM Configuration
-HSM_LIBRARY_PATH = os.getenv("HSM_LIBRARY_PATH", "/usr/lib/softhsm/libsofthsm2.so")
-HSM_SLOT_ID = int(os.getenv("HSM_SLOT_ID", 0))
-HSM_PIN = os.getenv("HSM_PIN", "5678")
-HSM_LABEL = os.getenv("HSM_LABEL", "payment-hsm")
-SIGNING_KEY_LABEL = "my_signing_key"
+DEFAULT_LIBRARY = "/usr/lib/softhsm/libsofthsm2.so"
+SIGNING_KEY_LABEL = os.getenv("HSM_SIGNING_KEY_LABEL", "payment-signing-key")
+ENCRYPTION_KEY_LABEL = os.getenv("HSM_ENCRYPTION_KEY_LABEL", "payment-encryption-key")
+TOKEN_LABEL = os.getenv("SOFTHSM_TOKEN_LABEL", os.getenv("HSM_LABEL", "payment-hsm"))
+USER_PIN = os.getenv("SOFTHSM_USER_PIN", os.getenv("HSM_PIN", "5678"))
 
-# Global session cache
-_hsm_session: Optional[PyKCS11.Session] = None
+_LIB = pkcs11.lib(os.getenv("SOFTHSM_MODULE", DEFAULT_LIBRARY))
+_TOKEN = _LIB.get_token(token_label=TOKEN_LABEL)
+_SESSION_LOCK = threading.Lock()
 
 
-def get_hsm_session() -> PyKCS11.Session:
-    """
-    Get or create HSM session.
-    Connects to SoftHSM using PKCS#11 interface.
-    """
-    global _hsm_session
-    
-    if _hsm_session is not None:
-        return _hsm_session
-    
+def _open_session() -> pkcs11.Session:
+    return _TOKEN.open(user_pin=USER_PIN)
+
+
+@contextmanager
+def session_scope() -> Iterator[pkcs11.Session]:
+    """Context manager that yields a session and closes it afterwards."""
+    with _SESSION_LOCK:  # serialize login for SoftHSM compatibility
+        session = _open_session()
     try:
-        logger.info(f"Connecting to HSM at {HSM_LIBRARY_PATH}")
-        lib = PyKCS11.PyKCS11Lib()
-        lib.load(HSM_LIBRARY_PATH)
-        
-        # Get available slots
-        slots = lib.getSlotList()
-        if not slots:
-            raise RuntimeError("No HSM slots available")
-        
-        logger.info(f"Available slots: {slots}")
-        
-        # Open session on the specified slot
-        _hsm_session = lib.openSession(HSM_SLOT_ID)
-        
-        # Login to the token
-        _hsm_session.login(HSM_PIN)
-        logger.info(f"Successfully logged into HSM slot {HSM_SLOT_ID}")
-        
-        return _hsm_session
-    except Exception as e:
-        logger.error(f"Failed to connect to HSM: {str(e)}")
-        raise
+        yield session
+    finally:
+        session.close()
+
+
+def _ensure_signing_key(session: pkcs11.Session) -> None:
+    try:
+        session.get_key(KeyType.RSA, label=SIGNING_KEY_LABEL, object_class=ObjectClass.PRIVATE_KEY)
+    except NoSuchKey:
+        public_template = {
+            Attribute.LABEL: SIGNING_KEY_LABEL,
+            Attribute.TOKEN: True,
+            Attribute.PUBLIC_EXPONENT: (1 << 16) + 1,
+            Attribute.VERIFY: True,
+        }
+        private_template = {
+            Attribute.LABEL: SIGNING_KEY_LABEL,
+            Attribute.TOKEN: True,
+            Attribute.SIGN: True,
+            Attribute.EXTRACTABLE: False,
+        }
+        session.generate_keypair(
+            KeyType.RSA,
+            2048,
+            public_template=public_template,
+            private_template=private_template,
+        )
+
+
+def _ensure_encryption_key(session: pkcs11.Session) -> None:
+    try:
+        session.get_key(KeyType.AES, label=ENCRYPTION_KEY_LABEL, object_class=ObjectClass.SECRET_KEY)
+    except NoSuchKey:
+        session.generate_key(
+            KeyType.AES,
+            256,
+            template={
+                Attribute.LABEL: ENCRYPTION_KEY_LABEL,
+                Attribute.TOKEN: True,
+                Attribute.ENCRYPT: True,
+                Attribute.DECRYPT: True,
+                Attribute.SENSITIVE: True,
+                Attribute.EXTRACTABLE: False,
+            },
+        )
 
 
 def initialize_keys_if_not_exist() -> None:
-    """
-    Initialize signing keys in HSM.
-    If my_signing_key doesn't exist, create a new RSA 2048-bit key pair.
-    """
-    try:
-        session = get_hsm_session()
-        
-        # Search for existing signing key
-        template = [
-            (PyKCS11.CKA_LABEL, SIGNING_KEY_LABEL),
-            (PyKCS11.CKA_CLASS, PyKCS11.CKO_PRIVATE_KEY),
-        ]
-        
-        existing_keys = session.findObjects(template)
-        
-        if existing_keys:
-            logger.info(f"Signing key '{SIGNING_KEY_LABEL}' already exists in HSM")
-            return
-        
-        logger.info(f"Creating new RSA 2048-bit signing key pair: {SIGNING_KEY_LABEL}")
-        
-        # Generate RSA key pair
-        public_key_template = [
-            (PyKCS11.CKA_TOKEN, True),
-            (PyKCS11.CKA_VERIFY, True),
-            (PyKCS11.CKA_LABEL, SIGNING_KEY_LABEL),
-        ]
-        
-        private_key_template = [
-            (PyKCS11.CKA_TOKEN, True),
-            (PyKCS11.CKA_SIGN, True),
-            (PyKCS11.CKA_EXTRACTABLE, False),  # Prevent key extraction
-            (PyKCS11.CKA_LABEL, SIGNING_KEY_LABEL),
-        ]
-        
-        # Generate 2048-bit RSA key pair
-        session.generateKeyPair(
-            PyKCS11.CKM_RSA_PKCS_KEY_PAIR_GEN,
-            public_key_template,
-            private_key_template,
-            1024  # 2048-bit key (1024 * 2)
-        )
-        
-        logger.info(f"Successfully created RSA key pair: {SIGNING_KEY_LABEL}")
-        
-    except Exception as e:
-        logger.error(f"Failed to initialize keys: {str(e)}")
-        raise
+    """Ensure signing and encryption keys exist within the token."""
+    with session_scope() as session:
+        _ensure_signing_key(session)
+        _ensure_encryption_key(session)
+
+
+def _get_signing_private_key(session: pkcs11.Session) -> Key:
+    return session.get_key(KeyType.RSA, label=SIGNING_KEY_LABEL, object_class=ObjectClass.PRIVATE_KEY)
+
+
+def _get_signing_public_key(session: pkcs11.Session) -> Key:
+    return session.get_key(KeyType.RSA, label=SIGNING_KEY_LABEL, object_class=ObjectClass.PUBLIC_KEY)
+
+
+def _get_encryption_key(session: pkcs11.Session) -> Key:
+    return session.get_key(KeyType.AES, label=ENCRYPTION_KEY_LABEL, object_class=ObjectClass.SECRET_KEY)
 
 
 def sign_message(message: str) -> bytes:
-    """
-    Sign a message using the private key in HSM.
-    Uses SHA256-RSA-PKCS signature mechanism.
-    
-    Args:
-        message: The message to sign
-        
-    Returns:
-        The signature bytes
-    """
-    try:
-        session = get_hsm_session()
-        
-        # Find the private signing key
-        template = [
-            (PyKCS11.CKA_LABEL, SIGNING_KEY_LABEL),
-            (PyKCS11.CKA_CLASS, PyKCS11.CKO_PRIVATE_KEY),
-        ]
-        
-        keys = session.findObjects(template)
-        if not keys:
-            raise RuntimeError(f"Signing key '{SIGNING_KEY_LABEL}' not found in HSM")
-        
-        private_key = keys[0]
-        
-        # Sign the message
-        message_bytes = message.encode('utf-8')
-        signature = session.sign(
-            private_key,
-            message_bytes,
-            PyKCS11.Mechanism(PyKCS11.CKM_SHA256_RSA_PKCS)
-        )
-        
-        logger.info(f"Successfully signed message (length: {len(message_bytes)} bytes)")
+    data = message.encode("utf-8")
+    with session_scope() as session:
+        key = _get_signing_private_key(session)
+        signature = key.sign(data, mechanism=Mechanism.SHA256_RSA_PKCS)
         return bytes(signature)
-        
-    except Exception as e:
-        logger.error(f"Failed to sign message: {str(e)}")
-        raise
 
 
-def get_public_key_bytes() -> bytes:
-    """
-    Get the public key in DER format from HSM.
-    
-    Returns:
-        The public key in DER format
-    """
-    try:
-        session = get_hsm_session()
-        
-        # Find the public key
-        template = [
-            (PyKCS11.CKA_LABEL, SIGNING_KEY_LABEL),
-            (PyKCS11.CKA_CLASS, PyKCS11.CKO_PUBLIC_KEY),
-        ]
-        
-        keys = session.findObjects(template)
-        if not keys:
-            raise RuntimeError(f"Public key '{SIGNING_KEY_LABEL}' not found in HSM")
-        
-        public_key = keys[0]
-        
-        # Extract public key components (modulus and exponent)
-        modulus = public_key[PyKCS11.CKA_MODULUS]
-        exponent = public_key[PyKCS11.CKA_PUBLIC_EXPONENT]
-        
-        # Convert to bytes
-        modulus_bytes = bytes(modulus)
-        exponent_bytes = bytes(exponent)
-        
-        logger.info(f"Successfully retrieved public key (modulus: {len(modulus_bytes)} bytes)")
-        
-        # Return modulus and exponent as concatenated bytes
-        # In production, you'd want to encode this as proper DER format
-        return modulus_bytes + exponent_bytes
-        
-    except Exception as e:
-        logger.error(f"Failed to get public key: {str(e)}")
-        raise
+def get_public_key_der() -> bytes:
+    with session_scope() as session:
+        key = _get_signing_public_key(session)
+        modulus = int.from_bytes(key[Attribute.MODULUS], "big")
+        exponent = int.from_bytes(key[Attribute.PUBLIC_EXPONENT], "big")
+    public_numbers = rsa.RSAPublicNumbers(exponent, modulus)
+    public_key = public_numbers.public_key()
+    return public_key.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+
+
+def encrypt_token(plaintext: bytes) -> str:
+    with session_scope() as session:
+        key = _get_encryption_key(session)
+        iv = os.urandom(16)
+        ciphertext = key.encrypt(plaintext, mechanism=Mechanism.AES_CBC_PAD, iv=iv)
+    blob = base64.urlsafe_b64encode(iv + bytes(ciphertext)).decode("ascii")
+    return f"hsm:v1:{blob}"
+
+
+def decrypt_token(token: str) -> bytes:
+    if not token.startswith("hsm:v1:"):
+        raise ValueError("unsupported token format")
+    payload = base64.urlsafe_b64decode(token.split(":", 2)[2])
+    iv, ciphertext = payload[:16], payload[16:]
+    with session_scope() as session:
+        key = _get_encryption_key(session)
+        plaintext = key.decrypt(ciphertext, mechanism=Mechanism.AES_CBC_PAD, iv=iv)
+    return bytes(plaintext)

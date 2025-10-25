@@ -6,9 +6,13 @@ function App() {
   useEffect(() => {
     const controller = new AbortController();
 
-    fetch(import.meta.env.VITE_API_URL ?? "http://localhost:8000/health", {
-      signal: controller.signal,
-    })
+    fetch(
+      import.meta.env.VITE_API_URL ??
+        "http://localhost:10000/api/payment/health",
+      {
+        signal: controller.signal,
+      }
+    )
       .then(async (response) => {
         if (!response.ok) {
           throw new Error(`status ${response.status}`);

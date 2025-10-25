@@ -1,0 +1,176 @@
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901
+
+static_resources:
+  listeners:
+    - name: listener_http
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 10000
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_http
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: gateway
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            path: "/__ping"
+                          direct_response:
+                            status: 200
+                            body:
+                              inline_string: "ok\n"
+                        - match:
+                            safe_regex:
+                              google_re2: {}
+                              regex: "^/api/payment/(.+)$"
+                          route:
+                            cluster: payment_orchestrator
+                            regex_rewrite:
+                              pattern:
+                                google_re2: {}
+                                regex: "^/api/payment/(.+)$"
+                              substitution: "/payment/\\1"
+                        - match:
+                            safe_regex:
+                              google_re2: {}
+                              regex: "^/api/payments(/.*)?$"
+                          route:
+                            cluster: payment_orchestrator
+                            regex_rewrite:
+                              pattern:
+                                google_re2: {}
+                                regex: "^/api/payments(?=/|$)(.*)$"
+                              substitution: "/payments\\1"
+                        - match:
+                            prefix: "/"
+                          direct_response:
+                            status: 404
+                            body:
+                              inline_string: "not found\n"
+                http_filters:
+                  - name: envoy.filters.http.jwt_authn
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
+                      providers:
+                        keycloak:
+                          issuer: "http://keycloak:8081/realms/ecommerce"
+                          remote_jwks:
+                            http_uri:
+                              uri: "http://keycloak:8081/realms/ecommerce/protocol/openid-connect/certs"
+                              cluster: keycloak
+                              timeout: 5s
+                            cache_duration: 300s
+                          payload_in_metadata: "jwt_payload"
+                      rules:
+                        - match:
+                            path: "/__ping"
+                          requires:
+                            allow_missing: {}
+                        - match:
+                            path: "/api/payment/health"
+                          requires:
+                            allow_missing: {}
+                        - match:
+                            prefix: "/api/"
+                          requires:
+                            provider_name: keycloak
+                  - name: envoy.filters.http.rbac
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBAC
+                      rules:
+                        action: ALLOW
+                        policies:
+                          allow-public-ping:
+                            permissions:
+                              - header:
+                                  name: ":path"
+                                  string_match:
+                                    exact: "/__ping"
+                            principals:
+                              - any: true
+                          allow-public-health:
+                            permissions:
+                              - header:
+                                  name: ":path"
+                                  string_match:
+                                    exact: "/api/payment/health"
+                            principals:
+                              - any: true
+                          allow-customer-payment:
+                            permissions:
+                              - header:
+                                  name: ":path"
+                                  string_match:
+                                    prefix: "/api/"
+                            principals:
+                              - metadata:
+                                  filter: "envoy.filters.http.jwt_authn"
+                                  path:
+                                    - key: "jwt_payload"
+                                    - key: "realm_access"
+                                    - key: "roles"
+                                  value:
+                                    list_match:
+                                      one_of:
+                                        string_match:
+                                          exact: "customer"
+                  - name: envoy.filters.http.lua
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                      inline_code: |
+                        function envoy_on_request(request_handle)
+                          local md = request_handle:streamInfo():dynamicMetadata():get("envoy.filters.http.jwt_authn")
+                          if md ~= nil then
+                            local payload = md["jwt_payload"]
+                            if payload ~= nil then
+                              local user = payload["preferred_username"] or payload["sub"]
+                              if user ~= nil then
+                                request_handle:headers():replace("x-user-id", tostring(user))
+                              end
+                            end
+                          end
+                        end
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+  clusters:
+    - name: payment_orchestrator
+      connect_timeout: 0.25s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: payment_orchestrator
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: payment_orchestrator
+                      port_value: 8000
+    - name: keycloak
+      connect_timeout: 0.5s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: keycloak
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: keycloak
+                      port_value: 8081
