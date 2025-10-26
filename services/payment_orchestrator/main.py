@@ -28,7 +28,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 ORDER_SERVICE_URL = os.getenv("ORDER_SERVICE_URL", "http://order_service:8000")
-FRAUD_ENGINE_URL = os.getenv("FRAUD_ENGINE_URL", "http://fraud_engine:8003")
+FRAUD_ENGINE_URL = os.getenv("FRAUD_ENGINE_URL", "http://fraud_engine:8000")
 PSP_PROVIDER = os.getenv("PSP_PROVIDER", "mock")
 
 app = FastAPI(title="Payment Orchestrator")
@@ -304,7 +304,7 @@ async def orchestrate_payment(
     await session.commit()
     logger.info(f"[PAYMENT] Payment intent saved to database for order {payload.order_id}")
 
-    await _update_order_status(str(payload.order_id), PaymentStatus.SUCCESS.value, user_id)
+    await _update_order_status(str(payload.order_id), "COMPLETED", user_id)
 
     logger.info(f"[PAYMENT] Publishing receipt to reconciliation queue for order {payload.order_id}")
     await asyncio.to_thread(messaging.publish_receipt, {"receipt": receipt_dict, "signature": signature_b64})

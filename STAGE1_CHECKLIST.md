@@ -101,9 +101,9 @@ This checklist verifies that all Stage 1 requirements have been met for the Secu
   ```
   Expected: {"score": 10, "action": "ALLOW"}
 
-- [ ] **Payment Processing with Signed Receipt**
+- [ ] **Payment Processing with Signed Receipt** 
   ```bash
-  make test
+  make test #(now failing and stop here)
   ```
   Expected: All integration tests pass
 
@@ -235,7 +235,7 @@ This checklist verifies that all Stage 1 requirements have been met for the Secu
 
 ## Final Verification
 
-- [ ] **Full Integration Test**
+- [ ] **Full Integration Test** 
   ```bash
   make test
   ```
