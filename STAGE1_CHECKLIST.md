@@ -5,181 +5,187 @@ This checklist verifies that all Stage 1 requirements have been met for the Secu
 ## Infrastructure Setup
 
 - [ ] **Docker Compose Services Running**
-  \`\`\`bash
+  ```bash
   make up
   make ps
-  \`\`\`
+  ```
   Expected: All services show "Up" status
 
 - [ ] **Health Checks Passing**
-  \`\`\`bash
+  ```bash
   make health
-  \`\`\`
+  ```
   Expected: All services report healthy
 
 - [ ] **PostgreSQL Data Persistence**
-  \`\`\`bash
+  ```bash
   docker volume ls | grep postgres_data
-  \`\`\`
+  ```
   Expected: Volume exists and persists data
 
 - [ ] **SoftHSM Token Initialization**
-  \`\`\`bash
+  ```bash
   docker-compose exec -T softhsm softhsm2-util --show-slots
-  \`\`\`
+  ```
   Expected: Slot 0 shows "Initialized" with label "payment-hsm"
 
-- [ ] **Keycloak Running on Port 8081**
-  \`\`\`bash
-  curl -sf http://localhost:8081/health
-  \`\`\`
-  Expected: HTTP 200 response
+- [ ] **Keycloak Realm Reachable**
+  ```bash
+  curl -sf http://localhost:8081/realms/master/.well-known/openid-configuration
+  ```
+  Expected: JSON document containing realm metadata
+
+- [ ] **make health Outputs All ✓**
+  ```bash
+  make health
+  ```
+  Expected: Every line reports ✓
 
 - [ ] **Envoy Gateway Running on Port 10000**
-  \`\`\`bash
+  ```bash
   curl -sf http://localhost:10000/__ping
-  \`\`\`
+  ```
   Expected: "ok" response
 
 ## Authentication & Authorization
 
 - [ ] **JWT Token Generation**
-  \`\`\`bash
+  ```bash
   make token
-  \`\`\`
+  ```
   Expected: Valid JWT token printed to stdout
 
 - [ ] **Envoy JWT Validation**
-  \`\`\`bash
+  ```bash
   TOKEN=$(make token)
   curl -sf -H "Authorization: Bearer $TOKEN" http://localhost:10000/api/payment/health
-  \`\`\`
+  ```
   Expected: HTTP 200 response
 
 - [ ] **Unauthorized Request Rejection**
-  \`\`\`bash
+  ```bash
   curl -sf http://localhost:10000/api/payment/tokenize -X POST
-  \`\`\`
+  ```
   Expected: HTTP 401 Unauthorized
 
 ## Payment Flow (End-to-End)
 
 - [ ] **Order Creation**
-  \`\`\`bash
+  ```bash
   curl -X POST http://localhost:8001/orders \
     -H "x-user-id: customer1" \
     -H "Content-Type: application/json" \
     -d '{"amount":200000,"currency":"VND","items":[]}'
-  \`\`\`
+  ```
   Expected: Order ID returned
 
 - [ ] **Card Tokenization (HSM)**
-  \`\`\`bash
+  ```bash
   TOKEN=$(make token)
   curl -X POST http://localhost:10000/api/payment/tokenize \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"pan":"4111111111111111","exp_month":12,"exp_year":2030,"cvc":"123"}'
-  \`\`\`
+  ```
   Expected: Token starting with "hsm:v1:" returned
 
 - [ ] **Fraud Check (Rule-Based)**
-  \`\`\`bash
+  ```bash
   curl -X POST http://localhost:8003/score \
     -H "Content-Type: application/json" \
     -d '{"amount":200000,"device_id":"customer1"}'
-  \`\`\`
+  ```
   Expected: {"score": 10, "action": "ALLOW"}
 
 - [ ] **Payment Processing with Signed Receipt**
-  \`\`\`bash
+  ```bash
   make test
-  \`\`\`
+  ```
   Expected: All integration tests pass
 
 ## Cryptographic Operations
 
 - [ ] **HSM Key Generation**
-  \`\`\`bash
+  ```bash
   docker-compose exec -T softhsm softhsm2-util --show-slots
-  \`\`\`
+  ```
   Expected: RSA key pair and AES key present
 
 - [ ] **Public Key Retrieval**
-  \`\`\`bash
+  ```bash
   make dump-hsm
-  \`\`\`
+  ```
   Expected: Public key in base64 and PEM formats
 
 - [ ] **Receipt Signing (RSA-SHA256)**
-  \`\`\`bash
+  ```bash
   TOKEN=$(make token)
   curl -X POST http://localhost:10000/api/payment/sign \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"message":"test"}'
-  \`\`\`
+  ```
   Expected: Base64-encoded RSA signature returned
 
 - [ ] **Signature Verification**
-  \`\`\`bash
+  ```bash
   make verify-sig MESSAGE='test' SIGNATURE='<base64_signature>'
-  \`\`\`
+  ```
   Expected: "Signature verification PASSED"
 
 ## Data Persistence & Reconciliation
 
 - [ ] **Payment Intent Storage**
-  \`\`\`bash
+  ```bash
   docker-compose exec -T postgres_db psql -U payment_user -d payment_gateway -c \
     "SELECT count(*) FROM payment_intents;"
-  \`\`\`
+  ```
   Expected: Count > 0
 
 - [ ] **Used Token Tracking (Replay Prevention)**
-  \`\`\`bash
+  ```bash
   docker-compose exec -T postgres_db psql -U payment_user -d payment_gateway -c \
     "SELECT count(*) FROM used_payment_tokens;"
-  \`\`\`
+  ```
   Expected: Count > 0
 
 - [ ] **Reconciliation Receipt Storage**
-  \`\`\`bash
+  ```bash
   docker-compose exec -T postgres_db psql -U payment_user -d payment_gateway -c \
     "SELECT count(*) FROM reconciliation_receipts;"
-  \`\`\`
+  ```
   Expected: Count > 0
 
 - [ ] **RabbitMQ Message Queue**
-  \`\`\`bash
+  ```bash
   docker-compose exec -T rabbitmq rabbitmq-diagnostics queues
-  \`\`\`
+  ```
   Expected: "reconciliation_queue" listed
 
 ## Logging & Observability
 
 - [ ] **Payment Orchestrator Logs**
-  \`\`\`bash
+  ```bash
   make logs-payment | grep -E "\[TOKENIZE\]|\[PAYMENT\]|\[RECEIPT\]"
-  \`\`\`
+  ```
   Expected: Detailed logs for each operation
 
 - [ ] **Fraud Engine Logs**
-  \`\`\`bash
+  ```bash
   make logs-fraud | grep "\[FRAUD_SCORE\]"
-  \`\`\`
+  ```
   Expected: Fraud scoring decisions logged
 
 - [ ] **Reconciliation Worker Logs**
-  \`\`\`bash
+  ```bash
   make logs-worker | grep "\[RECONCILIATION\]"
-  \`\`\`
+  ```
   Expected: Receipt processing logs
 
 - [ ] **Envoy Gateway Logs**
-  \`\`\`bash
+  ```bash
   make logs-envoy | grep "access_log"
-  \`\`\`
+  ```
   Expected: HTTP request/response logs
 
 ## Security Verification
@@ -202,33 +208,33 @@ This checklist verifies that all Stage 1 requirements have been met for the Secu
 ## Cleanup & Troubleshooting
 
 - [ ] **Service Logs Accessible**
-  \`\`\`bash
+  ```bash
   make debug-logs SERVICE=payment
   make debug-logs SERVICE=fraud
   make debug-logs SERVICE=reconciliation
-  \`\`\`
+  ```
   Expected: Logs displayed without errors
 
 - [ ] **Clean Shutdown**
-  \`\`\`bash
+  ```bash
   make down
-  \`\`\`
+  ```
   Expected: All containers stopped
 
 - [ ] **Clean Restart**
-  \`\`\`bash
+  ```bash
   make clean
   make up
   make health
-  \`\`\`
+  ```
   Expected: All services healthy after restart
 
 ## Final Verification
 
 - [ ] **Full Integration Test**
-  \`\`\`bash
+  ```bash
   make test
-  \`\`\`
+  ```
   Expected: All tests pass with summary output
 
 - [ ] **Documentation Complete**
@@ -237,9 +243,9 @@ This checklist verifies that all Stage 1 requirements have been met for the Secu
   - [ ] Scripts are executable and documented
 
 - [ ] **Code Quality**
-  \`\`\`bash
+  ```bash
   make lint
-  \`\`\`
+  ```
   Expected: No syntax errors
 
 ## Sign-Off

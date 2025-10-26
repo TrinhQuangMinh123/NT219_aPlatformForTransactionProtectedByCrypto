@@ -5,7 +5,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, PositiveInt, constr
 
-from .models import PaymentStatus
+from models import PaymentStatus
 
 
 class TokenizeRequest(BaseModel):

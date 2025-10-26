@@ -42,7 +42,11 @@ def session_scope() -> Iterator[pkcs11.Session]:
 
 def _ensure_signing_key(session: pkcs11.Session) -> None:
     try:
-        session.get_key(KeyType.RSA, label=SIGNING_KEY_LABEL, object_class=ObjectClass.PRIVATE_KEY)
+        session.get_key(
+            object_class=ObjectClass.PRIVATE_KEY,
+            key_type=KeyType.RSA,
+            label=SIGNING_KEY_LABEL,
+        )
     except NoSuchKey:
         public_template = {
             Attribute.LABEL: SIGNING_KEY_LABEL,
@@ -66,7 +70,11 @@ def _ensure_signing_key(session: pkcs11.Session) -> None:
 
 def _ensure_encryption_key(session: pkcs11.Session) -> None:
     try:
-        session.get_key(KeyType.AES, label=ENCRYPTION_KEY_LABEL, object_class=ObjectClass.SECRET_KEY)
+        session.get_key(
+            object_class=ObjectClass.SECRET_KEY,
+            key_type=KeyType.AES,
+            label=ENCRYPTION_KEY_LABEL,
+        )
     except NoSuchKey:
         session.generate_key(
             KeyType.AES,
@@ -90,15 +98,27 @@ def initialize_keys_if_not_exist() -> None:
 
 
 def _get_signing_private_key(session: pkcs11.Session) -> Key:
-    return session.get_key(KeyType.RSA, label=SIGNING_KEY_LABEL, object_class=ObjectClass.PRIVATE_KEY)
+    return session.get_key(
+        object_class=ObjectClass.PRIVATE_KEY,
+        key_type=KeyType.RSA,
+        label=SIGNING_KEY_LABEL,
+    )
 
 
 def _get_signing_public_key(session: pkcs11.Session) -> Key:
-    return session.get_key(KeyType.RSA, label=SIGNING_KEY_LABEL, object_class=ObjectClass.PUBLIC_KEY)
+    return session.get_key(
+        object_class=ObjectClass.PUBLIC_KEY,
+        key_type=KeyType.RSA,
+        label=SIGNING_KEY_LABEL,
+    )
 
 
 def _get_encryption_key(session: pkcs11.Session) -> Key:
-    return session.get_key(KeyType.AES, label=ENCRYPTION_KEY_LABEL, object_class=ObjectClass.SECRET_KEY)
+    return session.get_key(
+        object_class=ObjectClass.SECRET_KEY,
+        key_type=KeyType.AES,
+        label=ENCRYPTION_KEY_LABEL,
+    )
 
 
 def sign_message(message: str) -> bytes:

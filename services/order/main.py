@@ -6,9 +6,9 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import schemas
-from .database import get_session, init_db
-from .models import Order, OrderStatus
+import schemas
+from database import get_session, init_db
+from models import Order, OrderStatus
 
 app = FastAPI(title="Order Service")
 

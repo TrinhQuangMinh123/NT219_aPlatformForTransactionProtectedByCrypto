@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 import pika
 from sqlalchemy.exc import IntegrityError
 
-from .database import SessionLocal, init_db
-from .models import ReceiptRecord
+from database import SessionLocal, init_db
+from models import ReceiptRecord
 
 logging.basicConfig(
     level=logging.INFO,

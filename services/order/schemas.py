@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field, PositiveInt, conint, constr
 
-from .models import OrderStatus
+from models import OrderStatus
 
 
 class OrderItem(BaseModel):

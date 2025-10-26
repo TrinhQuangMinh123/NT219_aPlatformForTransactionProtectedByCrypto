@@ -6,7 +6,7 @@ from sqlalchemy import CheckConstraint, DateTime, Enum as SQLEnum, Integer, Stri
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .database import Base
+from database import Base
 
 
 class OrderStatus(str, enum.Enum):

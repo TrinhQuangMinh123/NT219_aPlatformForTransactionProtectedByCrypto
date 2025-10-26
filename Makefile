@@ -88,7 +88,7 @@ health:
 	@curl -sf http://localhost:8001/health && echo "✓ Order Service" || echo "✗ Order Service"
 	@curl -sf http://localhost:8002/health && echo "✓ Payment Orchestrator" || echo "✗ Payment Orchestrator"
 	@curl -sf http://localhost:8003/health && echo "✓ Fraud Engine" || echo "✗ Fraud Engine"
-	@curl -sf http://localhost:8081/health 2>/dev/null && echo "✓ Keycloak" || echo "✗ Keycloak"
+	@curl -sf http://localhost:8081/realms/master/.well-known/openid-configuration >/dev/null && echo "✓ Keycloak" || echo "✗ Keycloak"
 	@docker-compose exec -T postgres_db pg_isready -U payment_user 2>/dev/null && echo "✓ PostgreSQL" || echo "✗ PostgreSQL"
 	@docker-compose exec -T rabbitmq rabbitmq-diagnostics ping 2>/dev/null && echo "✓ RabbitMQ" || echo "✗ RabbitMQ"
 	@docker-compose exec -T softhsm softhsm2-util --show-slots 2>/dev/null | head -1 && echo "✓ SoftHSM" || echo "✗ SoftHSM"

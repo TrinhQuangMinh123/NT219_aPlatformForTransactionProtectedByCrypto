@@ -6,7 +6,7 @@ from sqlalchemy import DateTime, Enum as SQLEnum, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .database import Base
+from database import Base
 
 
 class PaymentStatus(str, enum.Enum):

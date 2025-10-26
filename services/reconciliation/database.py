@@ -18,6 +18,6 @@ Base = declarative_base()
 
 def init_db() -> None:
     # Import models here to register metadata before create_all
-    from . import models  # noqa: F401
+    import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)

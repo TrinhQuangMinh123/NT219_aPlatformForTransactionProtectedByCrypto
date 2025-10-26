@@ -53,7 +53,7 @@ static_resources:
                             regex_rewrite:
                               pattern:
                                 google_re2: {}
-                                regex: "^/api/payments(?=/|$)(.*)$"
+                                regex: "^/api/payments(/.*)?$"
                               substitution: "/payments\\1"
                         - match:
                             prefix: "/"
