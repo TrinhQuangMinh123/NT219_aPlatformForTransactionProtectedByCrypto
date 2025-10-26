@@ -71,18 +71,82 @@
   - Reconciliation worker chưa verify chữ ký biên lai; Fraud/SCA chỉ mới có rule theo số tiền, chưa có 3DS hay device binding.
 - **Lệnh mẫu & kết quả mong đợi**:
   ```bash
-  make health     # các dịch vụ backend và hạ tầng báo trạng thái ok
-  make test       # kết thúc với thông điệp “All integration tests PASSED”
+   m321@LaptopOfMinhHandsome:~/doAn/mmh/NT219_aPlatformForTransactionProtectedByCrypto$ make health     # các dịch vụ backend và hạ tầng báo trạng thái ok
+   make test       # kết thúc với thông điệp “All integration tests PASSED”
 
-  TOKEN=$(make -s token)
-  ORDER_ID=$(curl -s -X POST http://localhost:8001/orders \
-    -H "x-user-id: customer1" -H "Content-Type: application/json" \
-    -d '{"amount":200000,"currency":"VND","items":[]}' | jq -r '.id')
-  PAYMENT_TOKEN=$(curl -s -X POST http://localhost:10000/api/payment/tokenize \
-    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-    -d '{"pan":"4111111111111111","exp_month":12,"exp_year":2030,"cvc":"123"}' | jq -r '.token')
-  curl -s -X POST http://localhost:10000/api/payments \
-    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-    -d "{\"order_id\":\"$ORDER_ID\",\"payment_token\":\"$PAYMENT_TOKEN\"}"
+   TOKEN=$(make -s token)
+   ORDER_ID=$(curl -s -X POST http://localhost:8001/orders \
+      -H "x-user-id: customer1" -H "Content-Type: application/json" \
+      -d '{"amount":200000,"currency":"VND","items":[]}' | jq -r '.id')
+   PAYMENT_TOKEN=$(curl -s -X POST http://localhost:10000/api/payment/tokenize \
+      -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+      -d '{"pan":"4111111111111111","exp_month":12,"exp_year":2030,"cvc":"123"}' | jq -r '.token')
+   curl -s -X POST http://localhost:10000/api/payments \
+      -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+      -d "{\"order_id\":\"$ORDER_ID\",\"payment_token\":\"$PAYMENT_TOKEN\"}"
+   Checking service health...
+   ok
+   ✓ Envoy
+   {"status":"ok","service":"order"}✓ Order Service
+   {"status":"ok","provider":"mock"}✓ Payment Orchestrator
+   {"status":"ok"}✓ Fraud Engine
+   ✓ Keycloak
+   /var/run/postgresql:5432 - accepting connections
+   ✓ PostgreSQL
+   Will ping rabbit@16d0b0f99937. This only checks if the OS process is running and registered with epmd. Timeout: 60000 ms.
+   Ping succeeded
+   ✓ RabbitMQ
+   Available slots:
+   ✓ SoftHSM
+   docker-compose up -d --remove-orphans
+   WARN[0000] The "STRIPE_PUBLISHABLE_KEY" variable is not set. Defaulting to a blank string. 
+   WARN[0000] The "STRIPE_SECRET_KEY" variable is not set. Defaulting to a blank string. 
+   WARN[0000] The "STRIPE_WEBHOOK_SECRET" variable is not set. Defaulting to a blank string. 
+   WARN[0000] /home/m321/doAn/mmh/NT219_aPlatformForTransactionProtectedByCrypto/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion 
+   [+] Running 10/10
+   ✔ Container payment_gateway_mq              Healthy                                           0.5s 
+   ✔ Container payment_gateway_hsm             Healthy                                           0.5s 
+   ✔ Container payment_gateway_keycloak        Running                                           0.0s 
+   ✔ Container payment_gateway_db              Healthy                                           0.5s 
+   ✔ Container payment_gateway_reconciliation  Run...                                            0.0s 
+   ✔ Container payment_gateway_orchestrator    Runni...                                          0.0s 
+   ✔ Container payment_gateway_order           Running                                           0.0s 
+   ✔ Container payment_gateway_envoy           Running                                           0.0s 
+   ✔ Container payment_gateway_fraud           Running                                           0.0s 
+   ✔ Container payment_gateway_frontend        Running                                           0.0s 
+   ./scripts/integration_test.sh
+   [TEST] Obtaining JWT token from Keycloak...
+   [PASS] JWT token obtained
+   [TEST] Checking Envoy gateway health...
+   [PASS] Envoy gateway is healthy
+   [TEST] Checking Payment Orchestrator health...
+   [PASS] Payment Orchestrator is healthy
+   [TEST] Creating order...
+   [PASS] Order created: 1a2613fd-480f-4db4-91f0-4a96eaa933b7
+   [TEST] Tokenizing card via HSM...
+   [PASS] Card tokenized: hsm:v1:wp_HTHAzbWHa05yrWxO6gcP...
+   [TEST] Processing payment with fraud check...
+   [PASS] Payment processed successfully
+   [TEST] Verifying signed receipt...
+   [PASS] Signed receipt obtained: hZ4BiGLEsLhSAcflF3zMmS/81UnhuW...
+   [TEST] Waiting for reconciliation worker to process receipt (up to 20s)...
+   [PASS] Reconciliation entry confirmed in database
+   [TEST] Dumping HSM information...
+   Available slots:
+   Slot 1916774973
+      Slot info:
+         Description:      SoftHSM slot ID 0x723faa3d                                      
+         Manufacturer ID:  SoftHSM project                 
+
+   ========================================
+   All integration tests PASSED
+   ========================================
+
+   Summary:
+   - Order ID: 1a2613fd-480f-4db4-91f0-4a96eaa933b7
+   - Payment Token: hsm:v1:wp_HTHAzbWHa05yrWxO6gcP...
+   - Signed Receipt: hZ4BiGLEsLhSAcflF3zMmS/81UnhuW...
+   - Reconciliation Records: 1
+   {"status":"SUCCESS","signed_receipt":"clA5pqTV8i9Wpn4vgg7U9474zSYP7R6B5tdiUn91vaVV2Vy6vqkYARW6RVDlXpv1eUbIInc2mz56Jf66oaU6N3LOUNGEY8K8nJf0GefQASdKZJUi7eXKR8E4nkKyiFPImNt2waEI+HmRq8wDZ+okH5OIHUH72+Lz540HtuDgxoQKKQmA1chg3uwjq6vZr18LjNMaqA1RqqOaly7Q+wiTZiIW8exuQwy8/7QLgwXeo+8dADJ5jQrILGl7kCWaG6zdTHE8AALV/+ub8WyasePULGMQ2yCt8nkqG8bGCJuB1Ko25YQ0S9v63DkKjjSJuGn5+7VyjcGzbObDNFVmMWI77A==","receipt":{"order_id":"390183cc-3789-44b2-b3f6-e6db1bd6abb1","amount":200000,"currency":"VND","timestamp":"2025-10-26T13:29:29.917652+00:00","status":"SUCCESS","provider":"mock","psp_reference":"pi_mock_732c224553a3469e","last4":"1111"}}
   # => trả về JSON chứa status SUCCESS, signed_receipt và payload biên lai
   ```
