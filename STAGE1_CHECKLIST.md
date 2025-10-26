@@ -51,22 +51,26 @@ This checklist verifies that all Stage 1 requirements have been met for the Secu
 
 - [ ] **JWT Token Generation**
   ```bash
-  make token
+  make -s token
   ```
   Expected: Valid JWT token printed to stdout
 
 - [ ] **Envoy JWT Validation**
   ```bash
-  TOKEN=$(make token)
-  curl -sf -H "Authorization: Bearer $TOKEN" http://localhost:10000/api/payment/health
+  TOKEN=$(make -s token)
+  curl -s -o - -w '%{http_code}\n' \
+    -H "Authorization: Bearer $TOKEN" \
+    http://localhost:10000/api/payment/health
   ```
-  Expected: HTTP 200 response
+  Expected: JSON payload with status `ok` and trailing `200`
 
 - [ ] **Unauthorized Request Rejection**
   ```bash
-  curl -sf http://localhost:10000/api/payment/tokenize -X POST
+  curl -s -o - -w '%{http_code}\n' \
+    -X POST \
+    http://localhost:10000/api/payment/tokenize
   ```
-  Expected: HTTP 401 Unauthorized
+  Expected: Empty body (or error JSON) with trailing `401`
 
 ## Payment Flow (End-to-End)
 
@@ -81,11 +85,11 @@ This checklist verifies that all Stage 1 requirements have been met for the Secu
 
 - [ ] **Card Tokenization (HSM)**
   ```bash
-  TOKEN=$(make token)
+  TOKEN=$(make -s token)
   curl -X POST http://localhost:10000/api/payment/tokenize \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
-    -d '{"pan":"4111111111111111","exp_month":12,"exp_year":2030,"cvc":"123"}'
+    -d '{"pan":"4242424242424242","exp_month":12,"exp_year":2030,"cvc":"123"}'
   ```
   Expected: Token starting with "hsm:v1:" returned
 
@@ -119,7 +123,7 @@ This checklist verifies that all Stage 1 requirements have been met for the Secu
 
 - [ ] **Receipt Signing (RSA-SHA256)**
   ```bash
-  TOKEN=$(make token)
+  TOKEN=$(make -s token)
   curl -X POST http://localhost:10000/api/payment/sign \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \

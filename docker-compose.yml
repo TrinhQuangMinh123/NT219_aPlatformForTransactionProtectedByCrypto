@@ -123,6 +123,7 @@ services:
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672/
       SOFTHSM_MODULE: /usr/lib/softhsm/libsofthsm2.so
       SOFTHSM_CONF: /etc/softhsm2/softhsm2.conf
+      SOFTHSM2_CONF: /etc/softhsm2/softhsm2.conf
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

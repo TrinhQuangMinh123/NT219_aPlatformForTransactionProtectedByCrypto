@@ -16,7 +16,8 @@
       "name": "Payment Frontend",
       "protocol": "openid-connect",
       "publicClient": true,
-      "redirectUris": ["*"] ,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["*"],
       "webOrigins": ["*"]
     }
   ],
@@ -25,6 +26,7 @@
       "username": "customer1",
       "enabled": true,
       "emailVerified": true,
+      "email": "customer1@example.com",
       "firstName": "First",
       "lastName": "Customer",
       "credentials": [

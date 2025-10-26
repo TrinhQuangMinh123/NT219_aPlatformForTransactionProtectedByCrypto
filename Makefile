@@ -61,7 +61,7 @@ test:
 	./scripts/integration_test.sh
 
 token:
-	./scripts/auth_token.sh
+	@./scripts/auth_token.sh
 
 dump-hsm:
 	./scripts/dump_hsm.sh
