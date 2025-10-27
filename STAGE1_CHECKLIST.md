@@ -103,7 +103,7 @@ This checklist verifies that all Stage 1 requirements have been met for the Secu
 
 - [ ] **Payment Processing with Signed Receipt** 
   ```bash
-  make test #(now failing and stop here)
+  make test 
   ```
   Expected: All integration tests pass
 
